@@ -2,7 +2,7 @@ import { createSignal } from 'solid-js';
 import init, { solve } from '../solver/pkg';
 
 export default function App() {
-  const [values, setValues] = createSignal(Array.from({ length: 81 }, () => 0));
+  const [values, setValues] = createSignal(Uint32Array.from({ length: 81 }));
   const [active, setActive] = createSignal<number | null>(null);
   const [ready, setReady] = createSignal(false);
   const [highlighted, setHighlighted] = createSignal(new Set<number>());
@@ -13,23 +13,25 @@ export default function App() {
 
   document.addEventListener('keydown', (e) => {
     const selected = active();
-    let newValues: number[] | undefined;
-    let newHighlighted: Set<number> | undefined;
-    if (selected !== null) {
-      if (/^[1-9]$/.test(e.key)) {
-        newValues = [...values()];
-        newValues[selected] = Number.parseInt(e.key, 10) ?? 0;
-        newHighlighted = new Set(highlighted());
-        newHighlighted.add(selected);
-      } else if (e.key === 'Backspace' || e.key === 'Delete') {
-        newValues = [...values()];
-        newValues[selected] = 0;
-        newHighlighted = new Set(highlighted());
-        newHighlighted.delete(selected);
-      }
+    let functionName: 'add' | 'delete' | undefined;
+    let newValue = 0;
+
+    if (/^[1-9]$/.test(e.key)) {
+      newValue = Number(e.key);
+      functionName = 'add';
+    } else if (e.key === 'Backspace' || e.key === 'Delete') {
+      functionName = 'delete';
     }
-    if (newValues) setValues(newValues);
-    if (newHighlighted) setHighlighted(newHighlighted);
+
+    if (selected !== null && functionName) {
+      const updatedValues = new Uint32Array(values());
+      updatedValues[selected] = newValue;
+      setValues(updatedValues);
+
+      const updatedHighlighted = new Set(highlighted());
+      updatedHighlighted[functionName](selected);
+      setHighlighted(updatedHighlighted);
+    }
   });
 
   document.addEventListener('click', () => {
@@ -52,22 +54,21 @@ export default function App() {
 
             return (
               <button
-                class={[
-                  'w-10',
-                  'h-10',
-                  'border-black',
-                  'border-[1px]',
-                  (isSelected && 'bg-green-600') || (highlighted().has(id) && 'bg-stone-300'),
-                  borderRight && 'border-r-2',
-                  borderLeft && 'border-l-2',
-                  borderTop && 'border-t-2',
-                  borderBottom && 'border-b-2',
-                ]
-                  .filter(Boolean)
-                  .join(' ')}
+                classList={{
+                  'w-10': true,
+                  'h-10': true,
+                  'border-black': true,
+                  'border-[1px]': true,
+                  'bg-green-600': isSelected,
+                  'bg-stone-300': !isSelected && highlighted().has(id),
+                  'border-r-2': borderRight,
+                  'border-l-2': borderLeft,
+                  'border-t-2': borderTop,
+                  'border-b-2': borderBottom,
+                }}
                 onClick={(e) => {
                   e.stopImmediatePropagation();
-                  setActive(active() === id ? null : id);
+                  setActive(isSelected ? null : id);
                 }}
               >
                 {values()[id] || ''}
@@ -81,9 +82,7 @@ export default function App() {
           onClick={() => {
             setActive(null);
             const solved = solve(new Uint32Array(values()));
-            if (solved.length !== 0) {
-              setValues([...solved]);
-            }
+            if (solved.length !== 0) setValues(solved);
           }}
           class={`${
             ready() ? 'bg-green-600' : 'bg-green-400'
