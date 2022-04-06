@@ -59,6 +59,7 @@ export default function App() {
                   'h-10': true,
                   'border-black': true,
                   'border-[1px]': true,
+                  'hover:bg-green-300': !isSelected,
                   'bg-green-600': isSelected,
                   'bg-stone-300': !isSelected && highlighted().has(id),
                   'border-r-2': borderRight,
