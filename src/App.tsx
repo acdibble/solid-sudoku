@@ -55,10 +55,6 @@ export default function App() {
             return (
               <button
                 classList={{
-                  'w-10': true,
-                  'h-10': true,
-                  'border-black': true,
-                  'border-[1px]': true,
                   'hover:bg-green-300': !isSelected,
                   'bg-green-600': isSelected,
                   'bg-stone-300': !isSelected && highlighted().has(id),
@@ -67,6 +63,7 @@ export default function App() {
                   'border-t-2': borderTop,
                   'border-b-2': borderBottom,
                 }}
+                class="w-10 h-10 border-black border"
                 onClick={(e) => {
                   e.stopImmediatePropagation();
                   setActive(isSelected ? null : id);
