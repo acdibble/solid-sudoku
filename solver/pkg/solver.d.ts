@@ -1,10 +1,10 @@
 /* tslint:disable */
 /* eslint-disable */
 /**
-* @param {Uint32Array} puzzle
-* @returns {Uint32Array}
+* @param {Int32Array} puzzle
+* @returns {Int32Array}
 */
-export function solve(puzzle: Uint32Array): Uint32Array;
+export function solve(puzzle: Int32Array): Int32Array;
 
 export type InitInput = RequestInfo | URL | Response | BufferSource | WebAssembly.Module;
 

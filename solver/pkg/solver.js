@@ -54,8 +54,8 @@ function addBorrowedObject(obj) {
     return stack_pointer;
 }
 /**
-* @param {Uint32Array} puzzle
-* @returns {Uint32Array}
+* @param {Int32Array} puzzle
+* @returns {Int32Array}
 */
 export function solve(puzzle) {
     try {
@@ -110,24 +110,23 @@ async function init(input) {
         const ret = getObject(arg0).buffer;
         return addHeapObject(ret);
     };
-    imports.wbg.__wbg_newwithbyteoffsetandlength_bbdb045c2c009495 = function(arg0, arg1, arg2) {
-        const ret = new Uint32Array(getObject(arg0), arg1 >>> 0, arg2 >>> 0);
+    imports.wbg.__wbg_new_7fb6d86dfb4bf8c1 = function(arg0) {
+        const ret = new Int32Array(getObject(arg0));
         return addHeapObject(ret);
     };
-    imports.wbg.__wbg_new_e8c5277c0f9e2cfc = function(arg0) {
-        const ret = new Uint32Array(getObject(arg0));
-        return addHeapObject(ret);
-    };
-    imports.wbg.__wbg_set_03c7d8c063f469ef = function(arg0, arg1, arg2) {
+    imports.wbg.__wbg_set_b9a0125477d1982b = function(arg0, arg1, arg2) {
         getObject(arg0).set(getObject(arg1), arg2 >>> 0);
     };
-    imports.wbg.__wbg_length_f98ca60981480796 = function(arg0) {
+    imports.wbg.__wbg_length_b9cb8998b6b1d4a8 = function(arg0) {
         const ret = getObject(arg0).length;
         return ret;
     };
-    imports.wbg.__wbg_newwithlength_964c3348e8578142 = function(arg0) {
-        const ret = new Uint32Array(arg0 >>> 0);
+    imports.wbg.__wbg_newwithlength_0329b272721f524c = function(arg0) {
+        const ret = new Int32Array(arg0 >>> 0);
         return addHeapObject(ret);
+    };
+    imports.wbg.__wbg_setindex_6c3f5cc3f3988f28 = function(arg0, arg1, arg2) {
+        getObject(arg0)[arg1 >>> 0] = arg2;
     };
     imports.wbg.__wbindgen_throw = function(arg0, arg1) {
         throw new Error(getStringFromWasm0(arg0, arg1));

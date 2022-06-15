@@ -2,7 +2,7 @@ import { createSignal } from 'solid-js';
 import init, { solve } from '../solver/pkg';
 
 export default function App() {
-  const [values, setValues] = createSignal(Uint32Array.from({ length: 81 }));
+  const [values, setValues] = createSignal(Int32Array.from({ length: 81 }));
   const [active, setActive] = createSignal<number | null>(null);
   const [ready, setReady] = createSignal(false);
   const [highlighted, setHighlighted] = createSignal(new Set<number>());
@@ -24,7 +24,7 @@ export default function App() {
     }
 
     if (selected !== null && functionName) {
-      const updatedValues = new Uint32Array(values());
+      const updatedValues = new Int32Array(values());
       updatedValues[selected] = newValue;
       setValues(updatedValues);
 
@@ -79,7 +79,7 @@ export default function App() {
         <button
           onClick={() => {
             setActive(null);
-            const solved = solve(new Uint32Array(values()));
+            const solved = solve(new Int32Array(values()));
             if (solved.length !== 0) setValues(solved);
           }}
           class={`${
