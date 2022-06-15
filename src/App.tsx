@@ -1,8 +1,9 @@
-import { createEffect, createMemo, createSignal } from 'solid-js';
+import { createEffect, createMemo, createSignal, For } from 'solid-js';
+import { createStore } from 'solid-js/store';
 import Worker from './worker?worker';
 import type { WorkerMessage } from './worker';
 
-export type AppMessage = { message: 'solve'; array: Int32Array };
+export type AppMessage = { message: 'solve'; array: number[] };
 
 const useTimer = () => {
   const [startTime, setStartTime] = createSignal<number | null>(null);
@@ -39,12 +40,40 @@ const useTimer = () => {
   return { timeElapsed, start, stop, reset };
 };
 
+const cells = document.getElementsByName('cell');
+
+type ArrayOfLength<L, T, U extends T[] = []> = U extends { length: L }
+  ? U
+  : ArrayOfLength<L, T, [T, ...U]>;
+
+type Row = ArrayOfLength<9, number>;
+type Board = ArrayOfLength<9, Row>;
+type FlatBoard = ArrayOfLength<81, number>;
+
+const newBoard = () => Array.from({ length: 9 }, () => Array.from({ length: 9 }).fill(0)) as Board;
+
+const flatBoardToBoard = (array: FlatBoard) =>
+  Array.from({ length: 9 }, (_, i) => array.slice(i * 9, i * 9 + 9)) as Board;
+
 export default function App() {
-  const [values, setValues] = createSignal(Int32Array.from({ length: 81 }));
+  const [values, setValues] = createStore(newBoard());
   const [active, setActive] = createSignal<number | null>(null);
   const [ready, setReady] = createSignal(false);
   const [highlighted, setHighlighted] = createSignal(new Set<number>());
   const [solving, setSolving] = createSignal(false);
+
+  const updateValues: typeof setValues = (...args: Parameters<typeof setValues>) => {
+    setValues(...args);
+    cells.forEach((cell) => {
+      const x = Number.parseInt((cell as Element).getAttribute('data-x') as string, 10);
+      if (Number.isNaN(x)) return;
+      const y = Number.parseInt((cell as Element).getAttribute('data-y') as string, 10);
+      if (Number.isNaN(y)) return;
+
+      // eslint-disable-next-line no-param-reassign
+      (cell as HTMLInputElement).value = String(values[y]![x] || '');
+    });
+  };
 
   const { timeElapsed, start, stop, reset } = useTimer();
 
@@ -55,15 +84,14 @@ export default function App() {
       if (e.data.message === 'ready') {
         setReady(true);
       } else if (e.data.message === 'solved') {
-        if (e.data.result.length !== 0) {
-          setValues(e.data.result);
+        if (e.data.result.length === 81) {
+          updateValues(flatBoardToBoard([...e.data.result] as FlatBoard));
         }
         setSolving(false);
       }
     } else if (e.data.type === 'error') {
       alert(e.data.message);
     }
-    console.log(e.data);
   };
 
   createEffect(() => {
@@ -74,6 +102,15 @@ export default function App() {
   const postMessage = (message: AppMessage) => ready() && worker.postMessage(message);
 
   document.addEventListener('keydown', (e) => {
+    const x = Number.parseInt((e.target as Element).getAttribute('data-x') as string, 10);
+    if (Number.isNaN(x)) return;
+    const y = Number.parseInt((e.target as Element).getAttribute('data-y') as string, 10);
+    if (Number.isNaN(y)) return;
+
+    const target = e.target as HTMLInputElement;
+    e.preventDefault();
+    target.value = e.key;
+
     const selected = active();
     let functionName: 'add' | 'delete' | undefined;
     let newValue = 0;
@@ -86,10 +123,7 @@ export default function App() {
     }
 
     if (selected !== null && functionName) {
-      const updatedValues = new Int32Array(values());
-      updatedValues[selected] = newValue;
-      setValues(updatedValues);
-
+      updateValues(y, x, newValue);
       const updatedHighlighted = new Set(highlighted());
       updatedHighlighted[functionName](selected);
       setHighlighted(updatedHighlighted);
@@ -98,7 +132,7 @@ export default function App() {
 
   const copyBoard = () => {
     if (!getSelection()?.toString()) {
-      navigator.clipboard.writeText(JSON.stringify([...values()])).catch(() => {
+      navigator.clipboard.writeText(JSON.stringify([...values].flat())).catch(() => {
         // pass
       });
     }
@@ -122,7 +156,7 @@ export default function App() {
         // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
         newValues.every((val) => [0, 1, 2, 3, 4, 5, 6, 7, 8, 9].includes(val))
       ) {
-        setValues(new Int32Array(newValues));
+        updateValues(flatBoardToBoard(newValues as FlatBoard));
         setHighlighted(
           new Set(
             newValues
@@ -152,45 +186,41 @@ export default function App() {
         <div>{timeElapsed()?.toFixed(3) || '0.000'} s</div>
       </div>
       <div class="grid grid-cols-9">
-        {Array.from({ length: 9 }, (_, y) =>
-          Array.from({ length: 9 }, (__, x) => {
-            const id = y * 9 + x;
-            const isSelected = active() === id;
-            const borderTop = [0, 3, 6].includes(y % 9);
-            const borderRight = [2, 5, 8].includes(x % 9);
-            const borderBottom = [2, 5, 8].includes(y % 9);
-            const borderLeft = [0, 3, 6].includes(x % 9);
-
-            return (
-              <input
-                classList={{
-                  'hover:bg-green-300': !isSelected,
-                  'bg-green-600': isSelected,
-                  'bg-stone-300': !isSelected && highlighted().has(id),
-                  'border-r-2': borderRight,
-                  'border-l-2': borderLeft,
-                  'border-t-2': borderTop,
-                  'border-b-2': borderBottom,
-                }}
-                class="h-10 w-10 cursor-pointer border border-black text-center caret-transparent outline-none"
-                onClick={(e) => {
-                  e.stopImmediatePropagation();
-                  setActive(isSelected ? null : id);
-                }}
-                value={values()[id] || ''}
-                inputmode="numeric"
-                pattern="^\d$"
-              ></input>
-            );
-          }),
-        )}
+        <For each={values}>
+          {(row, y) => (
+            <For each={row}>
+              {(cell, x) => (
+                <input
+                  name="cell"
+                  data-x={x()}
+                  data-y={y()}
+                  classList={{
+                    'hover:bg-green-300': active() !== y() * 9 + x(),
+                    'bg-green-600': active() === y() * 9 + x(),
+                    'bg-stone-300': active() !== y() * 9 + x() && highlighted().has(y() * 9 + x()),
+                    'border-r-2': [2, 5, 8].includes(x() % 9),
+                    'border-l-2': [0, 3, 6].includes(x() % 9),
+                    'border-t-2': [0, 3, 6].includes(y() % 9),
+                    'border-b-2': [2, 5, 8].includes(y() % 9),
+                  }}
+                  class="h-10 w-10 cursor-pointer rounded-none border border-black text-center caret-transparent outline-none"
+                  onClick={(e) => {
+                    e.stopImmediatePropagation();
+                    setActive(y() * 9 + x());
+                  }}
+                  inputMode="numeric"
+                ></input>
+              )}
+            </For>
+          )}
+        </For>
       </div>
       <div class="flex space-x-4">
         <button
           onClick={() => {
             setActive(null);
             setSolving(true);
-            postMessage({ message: 'solve', array: values() });
+            postMessage({ message: 'solve', array: values.flat() });
           }}
           class="hover:text-stone-80 h-8 w-20 rounded-lg bg-green-600 text-stone-200 transition hover:bg-green-400 disabled:bg-green-400"
           disabled={!ready() || solving()}
@@ -202,8 +232,11 @@ export default function App() {
           onClick={() => {
             setActive(null);
             const playerChosen = highlighted();
-            return setValues((previous) =>
-              previous.map((value, index) => (playerChosen.has(index) ? value : 0)),
+            updateValues(
+              (previous) =>
+                previous.map((row, y) =>
+                  row.map((cell, x) => (playerChosen.has(y * 9 + x) ? cell : 0)),
+                ) as Board,
             );
           }}
           class="h-8 w-20 rounded-lg bg-yellow-500 transition hover:bg-yellow-300 hover:text-stone-700 disabled:bg-yellow-300 disabled:text-stone-700"
@@ -214,7 +247,7 @@ export default function App() {
           disabled={solving()}
           onClick={() => {
             setActive(null);
-            setValues((previous) => previous.map(() => 0));
+            updateValues(newBoard());
             setHighlighted(new Set<number>());
             reset();
           }}

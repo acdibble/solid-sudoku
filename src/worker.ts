@@ -14,7 +14,7 @@ init()
     self.onmessage = (e: MessageEvent<AppMessage>) => {
       if (e.data.message === 'solve') {
         try {
-          const result = solve(e.data.array);
+          const result = solve(new Int32Array(e.data.array));
           postMessage({ type: 'message', message: 'solved', result });
         } catch (err) {
           postMessage({ type: 'message', message: 'solved', result: new Int32Array() });
