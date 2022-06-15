@@ -16,17 +16,28 @@ enum Value {
     Nine = 0b1_0000_0000,
 }
 
-const VALUES: [Value; 9] = [
-    Value::One,
-    Value::Two,
-    Value::Three,
-    Value::Four,
-    Value::Five,
-    Value::Six,
-    Value::Seven,
-    Value::Eight,
-    Value::Nine,
-];
+impl Default for Value {
+    fn default() -> Self {
+        Value::None
+    }
+}
+
+impl Value {
+    fn next(&self) -> Option<Self> {
+        match self {
+            Value::None => Some(Value::One),
+            Value::One => Some(Value::Two),
+            Value::Two => Some(Value::Three),
+            Value::Three => Some(Value::Four),
+            Value::Four => Some(Value::Five),
+            Value::Five => Some(Value::Six),
+            Value::Six => Some(Value::Seven),
+            Value::Seven => Some(Value::Eight),
+            Value::Eight => Some(Value::Nine),
+            Value::Nine => None,
+        }
+    }
+}
 
 impl From<&Value> for i32 {
     fn from(value: &Value) -> Self {
@@ -69,6 +80,55 @@ impl From<i32> for Value {
     }
 }
 
+struct Stack<const N: usize, T: Clone + Copy + Default> {
+    items: [T; N],
+    pointer: usize,
+}
+
+impl<const N: usize, T: Clone + Copy + Default> Stack<N, T> {
+    fn new() -> Self {
+        Self {
+            items: [Default::default(); N],
+            pointer: 0,
+        }
+    }
+
+    fn push(&mut self, element: T) {
+        if self.pointer == N {
+            panic!("stack overflow")
+        }
+
+        self.items[self.pointer] = element;
+        self.pointer += 1;
+    }
+
+    fn pop(&mut self) {
+        if self.pointer == 0 {
+            panic!("stack underflow")
+        }
+
+        self.pointer -= 1;
+    }
+
+    fn peek_mut(&mut self) -> &mut T {
+        match self.items.get_mut(self.pointer - 1) {
+            Some(value) => value,
+            _ => unreachable!(),
+        }
+    }
+
+    fn peek(&self) -> &T {
+        match self.items.get(self.pointer - 1) {
+            Some(value) => value,
+            _ => unreachable!(),
+        }
+    }
+
+    fn is_empty(&self) -> bool {
+        self.pointer == 0
+    }
+}
+
 struct State(i32);
 
 impl State {
@@ -95,13 +155,8 @@ impl State {
         }
     }
 
-    fn remove(&self, value: &Value) -> Result<State, ()> {
-        let new_state = self.0 & !(*value as i32);
-
-        match new_state == self.0 {
-            true => Err(()),
-            false => Ok(State(new_state)),
-        }
+    fn remove(&self, value: &Value) -> State {
+        State(self.0 & !(*value as i32))
     }
 }
 
@@ -131,51 +186,70 @@ impl Board {
         Ok(())
     }
 
-    fn remove(&mut self, location: usize, value: &Value) -> Result<(), ()> {
+    fn remove(&mut self, location: usize, value: &Value) {
         let column_index = location % 9;
-        let new_column_state = self.column_states[column_index].remove(value)?;
+        let new_column_state = self.column_states[column_index].remove(value);
 
         let row_index = location / 9;
-        let new_row_state = self.row_states[row_index].remove(value)?;
+        let new_row_state = self.row_states[row_index].remove(value);
 
         let square_index = (location % 9) / 3 + location / 27 * 3;
-        let new_square_state = self.square_states[square_index].remove(value)?;
+        let new_square_state = self.square_states[square_index].remove(value);
 
         self.column_states[column_index] = new_column_state;
         self.row_states[row_index] = new_row_state;
         self.square_states[square_index] = new_square_state;
         self.values[location] = Value::None;
-
-        Ok(())
     }
 
-    fn solve(&mut self, starting_index: usize) -> Result<(), ()> {
-        for index in starting_index..81 {
-            if !matches!(self.values[index], Value::None) {
+    fn solve(&mut self) -> Result<(), &'static str> {
+        let mut index = 0;
+        let mut stack: Stack<81, (usize, Value)> = Stack::new();
+        let original_state = self.values.clone();
+
+        while index < 81 {
+            if !matches!(original_state[index], Value::None) {
+                index += 1;
                 continue;
             }
 
-            for value in VALUES {
-                if self.add(index, &value).is_ok() {
-                    if let Ok(arr) = self.solve(index + 1) {
-                        return Ok(arr);
-                    }
-
-                    self.remove(index, &value)?;
-                }
+            if stack.is_empty() || stack.peek().0 != index {
+                stack.push((index, Value::None));
             }
 
-            if matches!(self.values[index], Value::None) {
-                return Err(());
+            let stack_top = stack.peek();
+
+            self.remove(index, &stack_top.1);
+
+            let mut next_value = stack_top.1.next();
+
+            loop {
+                if let Some(new_value) = next_value {
+                    next_value = new_value.next();
+                    stack.peek_mut().1 = new_value;
+
+                    if self.add(index, &new_value).is_ok() {
+                        index += 1;
+                        break;
+                    }
+                } else {
+                    stack.pop();
+
+                    if stack.is_empty() {
+                        return Err("Unable to solve board");
+                    }
+
+                    index = stack.peek().0;
+                    break;
+                }
             }
         }
 
         Ok(())
     }
 }
-
 impl TryFrom<&js_sys::Int32Array> for Board {
-    type Error = ();
+    type Error = &'static str;
 
     fn try_from(array: &js_sys::Int32Array) -> Result<Self, Self::Error> {
         let mut board = Self {
@@ -185,29 +259,34 @@ impl TryFrom<&js_sys::Int32Array> for Board {
             square_states: State::new_array(),
         };
 
+        let mut error = false;
         array.for_each(&mut |value, index, _| {
             if value == 0 {
                 return;
             }
-            board.add(index as usize, &Value::from(value)).unwrap();
+            if board.add(index as usize, &Value::from(value)).is_err() {
+                error = true;
+            }
         });
 
-        Ok(board)
+        if error {
+            Err("Board contains conflicts")
+        } else {
+            Ok(board)
+        }
     }
 }
 
 #[wasm_bindgen]
-pub fn solve(puzzle: &js_sys::Int32Array) -> js_sys::Int32Array {
-    Board::try_from(puzzle)
-        .and_then(|mut board| {
-            board.solve(0)?;
+pub fn solve(puzzle: &js_sys::Int32Array) -> Result<js_sys::Int32Array, js_sys::Error> {
+    let mut board = Board::try_from(puzzle).map_err(|str| js_sys::Error::new(str))?;
 
-            let array = js_sys::Int32Array::new_with_length(81);
-            for (index, value) in board.values.iter().enumerate() {
-                array.set_index(index as u32, i32::from(value))
-            }
+    board.solve().map_err(|str| js_sys::Error::new(str))?;
 
-            Ok(array)
-        })
-        .unwrap_or_else(|()| js_sys::Int32Array::new_with_length(0))
+    let array = js_sys::Int32Array::new_with_length(81);
+    for (index, value) in board.values.iter().enumerate() {
+        array.set_index(index as u32, i32::from(value))
+    }
+
+    Ok(array)
 }

@@ -10,7 +10,9 @@ export type InitInput = RequestInfo | URL | Response | BufferSource | WebAssembl
 
 export interface InitOutput {
   readonly memory: WebAssembly.Memory;
-  readonly solve: (a: number) => number;
+  readonly solve: (a: number, b: number) => void;
+  readonly __wbindgen_add_to_stack_pointer: (a: number) => number;
+  readonly wasm_bindgen__convert__closures__invoke3_mut__h360f8ec28004451f: (a: number, b: number, c: number, d: number, e: number) => void;
 }
 
 /**
