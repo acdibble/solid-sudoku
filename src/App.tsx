@@ -51,14 +51,19 @@ export default function App() {
   const worker = new Worker();
 
   worker.onmessage = (e: MessageEvent<WorkerMessage>) => {
-    if (e.data.message === 'ready') {
-      setReady(true);
-    } else if (e.data.message === 'solved') {
-      if (e.data.result.length !== 0) {
-        setValues(e.data.result);
+    if (e.data.type === 'message') {
+      if (e.data.message === 'ready') {
+        setReady(true);
+      } else if (e.data.message === 'solved') {
+        if (e.data.result.length !== 0) {
+          setValues(e.data.result);
+        }
+        setSolving(false);
       }
-      setSolving(false);
+    } else if (e.data.type === 'error') {
+      alert(e.data.message);
     }
+    console.log(e.data);
   };
 
   createEffect(() => {

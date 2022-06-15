@@ -2,7 +2,10 @@
 import init, { solve } from '../solver/pkg';
 import type { AppMessage } from './App';
 
-export type WorkerMessage = { message: 'ready' } | { message: 'solved'; result: Int32Array };
+export type WorkerMessage =
+  | { type: 'message'; message: 'ready' }
+  | { type: 'message'; message: 'solved'; result: Int32Array }
+  | { type: 'error'; message: string };
 
 const postMessage = (message: WorkerMessage) => self.postMessage(message);
 
@@ -12,18 +15,18 @@ init()
       if (e.data.message === 'solve') {
         try {
           const result = solve(e.data.array);
-          postMessage({ message: 'solved', result });
+          postMessage({ type: 'message', message: 'solved', result });
         } catch (err) {
-          console.error(err);
-          postMessage({ message: 'solved', result: new Int32Array() });
+          postMessage({ type: 'message', message: 'solved', result: new Int32Array() });
+          postMessage({ type: 'error', message: (err as Error).message });
         }
       }
     };
 
-    postMessage({ message: 'ready' });
+    postMessage({ type: 'message', message: 'ready' });
   })
   .catch(() => {
-    console.error('failed to initialize WASM');
+    postMessage({ type: 'error', message: 'An error occurred while initializing the solver' });
   });
 
 export {};
