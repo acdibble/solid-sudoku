@@ -1,15 +1,72 @@
-import { createSignal } from 'solid-js';
-import init, { solve } from '../solver/pkg';
+import { createEffect, createMemo, createSignal } from 'solid-js';
+import Worker from './worker?worker';
+import type { WorkerMessage } from './worker';
+
+export type AppMessage = { message: 'solve'; array: Int32Array };
+
+const useTimer = () => {
+  const [startTime, setStartTime] = createSignal<number | null>(null);
+  const [stopTime, setStopTime] = createSignal<number | null>(null);
+
+  let interval: ReturnType<typeof setInterval> | null = null;
+
+  const timeElapsed = createMemo(() => {
+    const startedAt = startTime();
+    const stoppedAt = stopTime();
+    if (stoppedAt && startedAt) {
+      return (stoppedAt - startedAt) / 1000;
+    }
+    return startedAt && (Date.now() - startedAt) / 1000;
+  });
+
+  const stop = () => {
+    if (interval) clearInterval(interval);
+    interval = null;
+    setStopTime(Date.now());
+  };
+  const reset = () => {
+    setStartTime(null);
+    setStopTime(null);
+  };
+  const start = () => {
+    reset();
+    setStartTime(Date.now());
+    interval = setInterval(() => {
+      setStopTime(Date.now());
+    }, 1);
+  };
+
+  return { timeElapsed, start, stop, reset };
+};
 
 export default function App() {
   const [values, setValues] = createSignal(Int32Array.from({ length: 81 }));
   const [active, setActive] = createSignal<number | null>(null);
   const [ready, setReady] = createSignal(false);
   const [highlighted, setHighlighted] = createSignal(new Set<number>());
+  const [solving, setSolving] = createSignal(false);
 
-  init()
-    .then(() => setReady(true))
-    .catch(console.error);
+  const { timeElapsed, start, stop, reset } = useTimer();
+
+  const worker = new Worker();
+
+  worker.onmessage = (e: MessageEvent<WorkerMessage>) => {
+    if (e.data.message === 'ready') {
+      setReady(true);
+    } else if (e.data.message === 'solved') {
+      if (e.data.result.length !== 0) {
+        setValues(e.data.result);
+      }
+      setSolving(false);
+    }
+  };
+
+  createEffect(() => {
+    // eslint-disable-next-line no-unused-expressions
+    solving() ? start() : stop();
+  });
+
+  const postMessage = (message: AppMessage) => ready() && worker.postMessage(message);
 
   document.addEventListener('keydown', (e) => {
     const selected = active();
@@ -34,6 +91,49 @@ export default function App() {
     }
   });
 
+  const copyBoard = () => {
+    if (!getSelection()?.toString()) {
+      navigator.clipboard.writeText(JSON.stringify([...values()])).catch(() => {
+        // pass
+      });
+    }
+  };
+
+  document.addEventListener('copy', copyBoard);
+
+  const pasteBoard = async (e?: ClipboardEvent) => {
+    try {
+      let data: string;
+      if (e) {
+        data = e.clipboardData?.getData('text') ?? '[]';
+      } else {
+        data = await navigator.clipboard.readText();
+      }
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+      const newValues = JSON.parse(data);
+      if (
+        Array.isArray(newValues) &&
+        newValues.length === 81 &&
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
+        newValues.every((val) => [0, 1, 2, 3, 4, 5, 6, 7, 8, 9].includes(val))
+      ) {
+        setValues(new Int32Array(newValues));
+        setHighlighted(
+          new Set(
+            newValues
+              .map((n, index) => (n !== 0 ? index : null))
+              .filter((v) => v !== null) as number[],
+          ),
+        );
+      }
+    } catch {
+      // pass
+    }
+  };
+
+  // eslint-disable-next-line @typescript-eslint/no-misused-promises
+  document.addEventListener('paste', pasteBoard);
+
   document.addEventListener('click', () => {
     if (active()) {
       setActive(null);
@@ -41,7 +141,11 @@ export default function App() {
   });
 
   return (
-    <div class="flex flex-col justify-center items-center h-screen space-y-5">
+    <div class="flex h-screen flex-col items-center space-y-5 pt-4 md:justify-center md:pt-0">
+      <div class="flex flex-col items-center ">
+        <h1 class="text-3xl">Sudoku Solver</h1>
+        <div>{timeElapsed()?.toFixed(3) || '0.000'} s</div>
+      </div>
       <div class="grid grid-cols-9">
         {Array.from({ length: 9 }, (_, y) =>
           Array.from({ length: 9 }, (__, x) => {
@@ -53,7 +157,7 @@ export default function App() {
             const borderLeft = [0, 3, 6].includes(x % 9);
 
             return (
-              <button
+              <input
                 classList={{
                   'hover:bg-green-300': !isSelected,
                   'bg-green-600': isSelected,
@@ -63,14 +167,15 @@ export default function App() {
                   'border-t-2': borderTop,
                   'border-b-2': borderBottom,
                 }}
-                class="w-10 h-10 border-black border"
+                class="h-10 w-10 cursor-pointer border border-black text-center caret-transparent outline-none"
                 onClick={(e) => {
                   e.stopImmediatePropagation();
                   setActive(isSelected ? null : id);
                 }}
-              >
-                {values()[id] || ''}
-              </button>
+                value={values()[id] || ''}
+                inputmode="numeric"
+                pattern="^\d$"
+              ></input>
             );
           }),
         )}
@@ -79,17 +184,16 @@ export default function App() {
         <button
           onClick={() => {
             setActive(null);
-            const solved = solve(new Int32Array(values()));
-            if (solved.length !== 0) setValues(solved);
+            setSolving(true);
+            postMessage({ message: 'solve', array: values() });
           }}
-          class={`${
-            ready() ? 'bg-green-600' : 'bg-green-400'
-          } text-stone-200 w-20 h-8 rounded-lg hover:bg-green-400 hover:text-stone-800`}
-          disabled={!ready()}
+          class="hover:text-stone-80 h-8 w-20 rounded-lg bg-green-600 text-stone-200 transition hover:bg-green-400 disabled:bg-green-400"
+          disabled={!ready() || solving()}
         >
           Solve
         </button>
         <button
+          disabled={solving()}
           onClick={() => {
             setActive(null);
             const playerChosen = highlighted();
@@ -97,19 +201,71 @@ export default function App() {
               previous.map((value, index) => (playerChosen.has(index) ? value : 0)),
             );
           }}
-          class="w-20 h-8 rounded-lg bg-yellow-500 hover:bg-yellow-300"
+          class="h-8 w-20 rounded-lg bg-yellow-500 transition hover:bg-yellow-300 hover:text-stone-700 disabled:bg-yellow-300 disabled:text-stone-700"
         >
           Clear
         </button>
         <button
+          disabled={solving()}
           onClick={() => {
             setActive(null);
             setValues((previous) => previous.map(() => 0));
             setHighlighted(new Set<number>());
+            reset();
           }}
-          class="w-20 h-8 rounded-lg bg-red-600 text-stone-200 hover:bg-red-400"
+          class="h-8 w-20 rounded-lg bg-red-600 text-stone-200 transition hover:bg-red-400 disabled:bg-red-400"
         >
           Reset
+        </button>
+      </div>
+      <div class="flex space-x-4">
+        <button
+          disabled={solving()}
+          onClick={() => {
+            copyBoard();
+          }}
+          class="hover:text-stone-80 flex items-center justify-center space-x-2 rounded-lg bg-stone-600 p-2 text-stone-200 transition hover:bg-stone-400 disabled:bg-stone-400"
+        >
+          <svg
+            class="h-6 w-6"
+            fill="none"
+            stroke="currentColor"
+            viewBox="0 0 24 24"
+            xmlns="http://www.w3.org/2000/svg"
+          >
+            <path
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              stroke-width="2"
+              d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3"
+            ></path>
+          </svg>
+          <span>Copy</span>
+        </button>
+        <button
+          disabled={solving()}
+          onClick={() => {
+            pasteBoard().catch(() => {
+              // pass
+            });
+          }}
+          class="hover:text-stone-80 flex items-center justify-center space-x-2 rounded-lg bg-stone-600 p-2 text-stone-200 transition hover:bg-stone-400 disabled:bg-stone-400"
+        >
+          <svg
+            class="h-6 w-6"
+            fill="none"
+            stroke="currentColor"
+            viewBox="0 0 24 24"
+            xmlns="http://www.w3.org/2000/svg"
+          >
+            <path
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              stroke-width="2"
+              d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"
+            ></path>
+          </svg>
+          <span>Paste</span>
         </button>
       </div>
     </div>
